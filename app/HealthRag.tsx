@@ -117,6 +117,30 @@ function shortLine(value: string, maximum = 92) {
   return `${firstSentence.slice(0, maximum - 3).trimEnd()}...`;
 }
 
+function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous: boolean): [string, string] {
+  if (ambiguous) {
+    return [
+      "These symptoms could match multiple conditions in the document.",
+      "The available information is insufficient to identify one condition.",
+    ];
+  }
+  if (!matches.length) {
+    return [
+      "I couldn't find information about this condition in the provided medical document.",
+      "\u00a0",
+    ];
+  }
+
+  const asksForMedicine = /\b(medicine|medicines|tablet|tablets|drug|drugs)\b/.test(normalise(question));
+  const medicineLine = matches[0].medicine && !matches[0].medicine.startsWith("Consult a qualified")
+    ? shortLine(matches[0].medicine)
+    : "The document does not name a specific medicine for this condition.";
+  return [
+    shortLine(matches[0].overview),
+    asksForMedicine ? medicineLine : shortLine(matches[0].suggestions),
+  ];
+}
+
 export default function HealthRag() {
   const [dataset, setDataset] = useState<MedicalDataset | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,12 +148,14 @@ export default function HealthRag() {
   const [activeQuery, setActiveQuery] = useState(starterQuery);
   const [results, setResults] = useState<MedicalRecord[]>([]);
   const [ambiguous, setAmbiguous] = useState(false);
+  const [generatedAnswer, setGeneratedAnswer] = useState<[string, string] | null>(null);
   const [recentChats, setRecentChats] = useState<RecentChat[]>(starterChats);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const answerRequestRef = useRef(0);
 
   useEffect(() => {
     fetch("/data/medical-info.json")
@@ -162,6 +188,7 @@ export default function HealthRag() {
     setActiveQuery(clean);
     setResults(retrieval.matches);
     setAmbiguous(retrieval.ambiguous);
+    setGeneratedAnswer(null);
     setQuery("");
     setMobileSidebarOpen(false);
     setRecentChats((current) => {
@@ -176,7 +203,38 @@ export default function HealthRag() {
       }
       return next;
     });
+    void requestOpenRouterAnswer(clean, retrieval.matches, retrieval.ambiguous);
     requestAnimationFrame(() => threadEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+  }
+
+  async function requestOpenRouterAnswer(question: string, matches: MedicalRecord[], isAmbiguous: boolean) {
+    const requestId = answerRequestRef.current + 1;
+    answerRequestRef.current = requestId;
+    const fallbackLines = getFallbackLines(question, matches, isAmbiguous);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          ambiguous: isAmbiguous,
+          fallbackLines,
+          context: matches.map(({ title, overview, medicine, suggestions }) => ({ title, overview, medicine, suggestions })),
+        }),
+      });
+      const payload = await response.json() as { lines?: unknown };
+      if (
+        answerRequestRef.current === requestId
+        && Array.isArray(payload.lines)
+        && payload.lines.length === 2
+        && payload.lines.every((line) => typeof line === "string")
+      ) {
+        setGeneratedAnswer([payload.lines[0], payload.lines[1]]);
+      }
+    } catch {
+      // The local document-grounded answer remains visible when the API is unavailable.
+    }
   }
 
   function submit(event: FormEvent) {
@@ -188,31 +246,16 @@ export default function HealthRag() {
     setActiveQuery("");
     setResults([]);
     setAmbiguous(false);
+    setGeneratedAnswer(null);
+    answerRequestRef.current += 1;
     setQuery("");
     setMobileSidebarOpen(false);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  const asksForMedicine = /\b(medicine|medicines|tablet|tablets|drug|drugs)\b/.test(normalise(activeQuery));
-  const medicineLine = results[0]?.medicine && !results[0].medicine.startsWith("Consult a qualified")
-    ? shortLine(results[0].medicine)
-    : "The document does not name a specific medicine for this condition.";
   const answerLines = loading
     ? ["Reading the medical information...", "Please wait a moment."]
-    : ambiguous
-      ? [
-          "These symptoms could match multiple conditions in the document.",
-          "The available information is insufficient to identify one condition.",
-        ]
-      : results.length
-      ? [
-          shortLine(results[0].overview),
-          asksForMedicine ? medicineLine : shortLine(results[0].suggestions),
-        ]
-      : [
-          "I couldn't find information about this condition in the provided medical document.",
-          "\u00a0",
-        ];
+    : generatedAnswer ?? getFallbackLines(activeQuery, results, ambiguous);
 
   const sidebarClass = [
     "history-sidebar",

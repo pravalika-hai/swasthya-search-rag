@@ -25,6 +25,9 @@
 - Submitted an unknown condition and confirmed the required not-found response appeared.
 - Submitted ambiguous symptoms and confirmed MedSearch did not guess a condition.
 - Submitted a diabetes medicine question and confirmed the response used only medicine wording explicitly found in the new PDF, with no invented dose.
+- Added a same-origin server endpoint for OpenRouter's `openrouter/free` router; the browser never receives the API key.
+- Confirmed the endpoint returns the two-line document fallback when `OPENROUTER_API_KEY` is unavailable.
+- Confirmed model output is rejected unless its meaningful words and numbers are grounded in the retrieved PDF context.
 - Confirmed the removed alert, retrieval, suggestion, medicine, citation, and expandable-detail UI is absent.
 - Opened the recent-chat drawer at the mobile viewport.
 - Browser console errors: none.
