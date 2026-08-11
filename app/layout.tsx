@@ -21,19 +21,16 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase,
-    title: "Swasthya Search | Tablet & Disease Reference",
-    description:
-      "A dataset-grounded search assistant for tablet and disease references.",
+    title: "MedSearch | Tablet & Disease Reference",
+    description: "A dataset-grounded search assistant for tablet and disease references.",
     openGraph: {
-      title: "Swasthya Search",
+      title: "MedSearch",
       description: "Ask the data. See the evidence across the supplied tablet and disease records.",
-      images: [{ url: "/og.png", width: 1200, height: 630, alt: "Swasthya Search — Ask the data. See the evidence." }],
     },
     twitter: {
-      card: "summary_large_image",
-      title: "Swasthya Search",
+      card: "summary",
+      title: "MedSearch",
       description: "Ask the data. See the evidence across the supplied tablet and disease records.",
-      images: ["/og.png"],
     },
     icons: {
       icon: "/favicon.svg",
