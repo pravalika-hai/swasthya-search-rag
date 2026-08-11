@@ -10,12 +10,9 @@ import {
   ClockCounterClockwise,
   FilePdf,
   GearSix,
-  Info,
   PaperPlaneTilt,
   Plus,
-  ShieldCheck,
   SidebarSimple,
-  Warning,
   X,
 } from "@phosphor-icons/react";
 
@@ -65,11 +62,6 @@ const stopWords = new Set([
   "what", "which", "with",
 ]);
 
-const emergencyTerms = [
-  "chest pain", "cannot breathe", "difficulty breathing", "severe bleeding",
-  "unconscious", "fainted", "fainting", "seizure", "suicidal", "overdose",
-];
-
 function normalise(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -112,11 +104,10 @@ function retrieve(data: MedicalRecord[], query: string) {
     .map(({ record }) => record);
 }
 
-function shorten(value: string, maximum = 340) {
-  if (value.length <= maximum) return value;
-  const clipped = value.slice(0, maximum);
-  const sentence = clipped.lastIndexOf(". ");
-  return `${clipped.slice(0, sentence > 170 ? sentence + 1 : maximum).trim()}...`;
+function shortLine(value: string, maximum = 92) {
+  const firstSentence = value.split(/(?<=[.!?])\s/)[0]?.trim() || value.trim();
+  if (firstSentence.length <= maximum) return firstSentence;
+  return `${firstSentence.slice(0, maximum - 3).trimEnd()}...`;
 }
 
 export default function HealthRag() {
@@ -125,7 +116,6 @@ export default function HealthRag() {
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState(starterQuery);
   const [results, setResults] = useState<MedicalRecord[]>([]);
-  const [selectedRecord, setSelectedRecord] = useState<number | null>(null);
   const [recentChats, setRecentChats] = useState<RecentChat[]>(starterChats);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -160,7 +150,6 @@ export default function HealthRag() {
     if (!clean || !dataset) return;
     setActiveQuery(clean);
     setResults(retrieve(dataset.records, clean));
-    setSelectedRecord(null);
     setQuery("");
     setMobileSidebarOpen(false);
     setRecentChats((current) => {
@@ -186,16 +175,22 @@ export default function HealthRag() {
   function newChat() {
     setActiveQuery("");
     setResults([]);
-    setSelectedRecord(null);
     setQuery("");
     setMobileSidebarOpen(false);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  const emergency = emergencyTerms.some((term) => normalise(activeQuery).includes(term));
-  const answer = results.length
-    ? `I found ${results.length} relevant medical reference ${results.length === 1 ? "section" : "sections"} in the supplied PDF. The closest match is "${results[0].title}" on page ${results[0].page}.`
-    : "I could not find a confident match in the supplied PDF. Try naming a condition, symptom, or topic such as diabetes, fever, asthma, or hypertension.";
+  const answerLines = loading
+    ? ["Reading the medical information...", "Please wait a moment."]
+    : results.length
+      ? [
+          shortLine(results[0].overview),
+          shortLine(normalise(activeQuery).includes("medicine") ? results[0].medicine : results[0].suggestions),
+        ]
+      : [
+          "I could not find a close match in the supplied medical information.",
+          "Try asking about a specific condition such as asthma, diabetes, or fever.",
+        ];
 
   const sidebarClass = [
     "history-sidebar",
@@ -271,47 +266,7 @@ export default function HealthRag() {
                 <article className="answer-row message-enter answer-delay">
                   <span className="assistant-avatar"><Plus size={18} weight="bold" /></span>
                   <div className="answer-content">
-                    <strong className="assistant-name">MedSearch</strong>
-                    <p>{loading ? "Reading the supplied medical PDF..." : answer}</p>
-
-                    <div className={emergency ? "safety-notice is-urgent" : "safety-notice"}>
-                      <Warning size={22} weight="fill" />
-                      <div>
-                        <strong>{emergency ? "Please get urgent help" : "Medical information, not a diagnosis"}</strong>
-                        <p>{emergency ? "Call India's emergency number 112 or go to the nearest emergency department." : "Use this PDF guidance as a reference. A qualified clinician must diagnose symptoms and choose any medicine or dose."}</p>
-                      </div>
-                    </div>
-
-                    {!emergency && results.length > 0 && (
-                      <section className="results-section">
-                        <div className="results-toolbar">
-                          <div className="results-title"><FilePdf size={19} weight="fill" /><span>RETRIEVED FROM YOUR PDF</span><strong>{results.length} matching references</strong></div>
-                          <span className="price-note"><Info size={18} /> Medicine prices are not provided in this PDF.</span>
-                        </div>
-
-                        <div className="reference-list" aria-label="Matching PDF references">
-                          {results.map((record, index) => (
-                            <article className={selectedRecord === record.id ? "reference-card is-expanded" : "reference-card"} key={record.id}>
-                              <button className="reference-main" type="button" onClick={() => setSelectedRecord(selectedRecord === record.id ? null : record.id)}>
-                                <span className="record-number">{String(index + 1).padStart(2, "0")}</span>
-                                <span className="reference-copy"><strong>{record.title}</strong><small>Page {record.page} of {dataset?.pageCount || 23}</small></span>
-                                <span className="reference-action">{selectedRecord === record.id ? "Close" : "View guidance"}<CaretRight size={15} /></span>
-                              </button>
-                              <div className="reference-summary">
-                                <p>{shorten(record.overview)}</p>
-                                <div className="guidance-grid">
-                                  <div><strong>Suggestions</strong><p>{shorten(record.suggestions, 260)}</p></div>
-                                  <div><strong>Medicine information</strong><p>{shorten(record.medicine, 260)}</p></div>
-                                </div>
-                              </div>
-                              {selectedRecord === record.id && (
-                                <div className="record-detail"><ShieldCheck size={17} weight="fill" />Source: medical info.pdf, page {record.page}. Confirm any treatment or medicine decision with a qualified healthcare professional.</div>
-                              )}
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-                    )}
+                    <p className="two-line-answer"><span>{answerLines[0]}</span><span>{answerLines[1]}</span></p>
                   </div>
                 </article>
               </div>
@@ -325,7 +280,6 @@ export default function HealthRag() {
             <textarea ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value.slice(0, 500))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (query.trim()) ask(query); } }} placeholder="Message MedSearch" rows={1} disabled={loading} aria-label="Health question" />
             <button type="submit" disabled={loading || !query.trim()} aria-label="Send question"><PaperPlaneTilt size={20} weight="fill" /></button>
           </form>
-          <p><ShieldCheck size={15} /> PDF reference only. Confirm treatment decisions with a clinician.</p>
         </footer>
       </section>
 
