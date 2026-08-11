@@ -75,14 +75,15 @@ function getTokens(value: string) {
 function retrieve(data: MedicalRecord[], query: string) {
   const queryText = normalise(query);
   let queryTokens = getTokens(query);
+  let explicitAlias = false;
 
-  if (queryText.includes("high blood pressure")) queryTokens.push("hypertension");
-  if (queryText.includes("high blood sugar") || queryText.includes("blood glucose")) queryTokens.push("diabetes");
-  if (queryText.includes("heart attack")) queryTokens.push("coronary", "artery", "disease");
+  if (queryText.includes("high blood pressure")) { queryTokens.push("hypertension"); explicitAlias = true; }
+  if (queryText.includes("high blood sugar") || queryText.includes("blood glucose")) { queryTokens.push("diabetes"); explicitAlias = true; }
+  if (queryText.includes("heart attack")) { queryTokens.push("coronary", "artery", "disease"); explicitAlias = true; }
   if (queryText.includes("stomach pain") || queryText.includes("acidity")) queryTokens.push("gastritis", "acidity");
   queryTokens = [...new Set(queryTokens)];
 
-  return data
+  const ranked = data
     .map((record) => {
       const title = normalise(record.title);
       const overview = normalise(record.overview);
@@ -100,8 +101,14 @@ function retrieve(data: MedicalRecord[], query: string) {
     })
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score || left.record.page - right.record.page)
-    .slice(0, 4)
-    .map(({ record }) => record);
+    .slice(0, 4);
+
+  const symptomTerms = new Set(["fever", "cough", "headache", "pain", "tired", "fatigue", "vomiting", "diarrhea", "rash", "swelling", "breathing", "dizzy", "nausea"]);
+  const firstPerson = /\b(i have|i feel|i am feeling|my symptoms|suffering from)\b/.test(queryText);
+  const describesSymptoms = firstPerson && queryTokens.some((token) => symptomTerms.has(token));
+  const ambiguous = !explicitAlias && describesSymptoms && ranked.length > 1;
+
+  return { matches: ranked.map(({ record }) => record), ambiguous };
 }
 
 function shortLine(value: string, maximum = 92) {
@@ -116,6 +123,7 @@ export default function HealthRag() {
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState(starterQuery);
   const [results, setResults] = useState<MedicalRecord[]>([]);
+  const [ambiguous, setAmbiguous] = useState(false);
   const [recentChats, setRecentChats] = useState<RecentChat[]>(starterChats);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -131,7 +139,9 @@ export default function HealthRag() {
       })
       .then((nextDataset) => {
         setDataset(nextDataset);
-        setResults(retrieve(nextDataset.records, starterQuery));
+        const initial = retrieve(nextDataset.records, starterQuery);
+        setResults(initial.matches);
+        setAmbiguous(initial.ambiguous);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -148,8 +158,10 @@ export default function HealthRag() {
   function ask(nextQuery: string) {
     const clean = nextQuery.trim();
     if (!clean || !dataset) return;
+    const retrieval = retrieve(dataset.records, clean);
     setActiveQuery(clean);
-    setResults(retrieve(dataset.records, clean));
+    setResults(retrieval.matches);
+    setAmbiguous(retrieval.ambiguous);
     setQuery("");
     setMobileSidebarOpen(false);
     setRecentChats((current) => {
@@ -175,21 +187,31 @@ export default function HealthRag() {
   function newChat() {
     setActiveQuery("");
     setResults([]);
+    setAmbiguous(false);
     setQuery("");
     setMobileSidebarOpen(false);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
+  const asksForMedicine = /\b(medicine|medicines|tablet|tablets|drug|drugs)\b/.test(normalise(activeQuery));
+  const medicineLine = results[0]?.medicine && !results[0].medicine.startsWith("Consult a qualified")
+    ? shortLine(results[0].medicine)
+    : "The document does not name a specific medicine for this condition.";
   const answerLines = loading
     ? ["Reading the medical information...", "Please wait a moment."]
-    : results.length
+    : ambiguous
+      ? [
+          "These symptoms could match multiple conditions in the document.",
+          "The available information is insufficient to identify one condition.",
+        ]
+      : results.length
       ? [
           shortLine(results[0].overview),
-          shortLine(normalise(activeQuery).includes("medicine") ? results[0].medicine : results[0].suggestions),
+          asksForMedicine ? medicineLine : shortLine(results[0].suggestions),
         ]
       : [
-          "I could not find a close match in the supplied medical information.",
-          "Try asking about a specific condition such as asthma, diabetes, or fever.",
+          "I couldn't find information about this condition in the provided medical document.",
+          "\u00a0",
         ];
 
   const sidebarClass = [
