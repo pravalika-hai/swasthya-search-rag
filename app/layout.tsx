@@ -21,18 +21,18 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase,
-    title: "Swasthya Search | PMBJP Medicine Reference",
+    title: "Swasthya Search | Tablet & Disease Reference",
     description:
-      "A dataset-grounded search assistant for PMBJP generic medicines and prices in India.",
+      "A dataset-grounded search assistant for tablet and disease references.",
     openGraph: {
       title: "Swasthya Search",
-      description: "Ask the data. See the evidence across 470 PMBJP medicine records.",
+      description: "Ask the data. See the evidence across the supplied tablet and disease records.",
       images: [{ url: "/og.png", width: 1200, height: 630, alt: "Swasthya Search — Ask the data. See the evidence." }],
     },
     twitter: {
       card: "summary_large_image",
       title: "Swasthya Search",
-      description: "Ask the data. See the evidence across 470 PMBJP medicine records.",
+      description: "Ask the data. See the evidence across the supplied tablet and disease records.",
       images: ["/og.png"],
     },
     icons: {
