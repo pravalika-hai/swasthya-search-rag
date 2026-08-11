@@ -21,16 +21,16 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase,
-    title: "MedSearch | Tablet & Disease Reference",
-    description: "A dataset-grounded search assistant for tablet and disease references.",
+    title: "MedSearch | Medical PDF Assistant",
+    description: "A retrieval assistant grounded in the supplied medical information PDF.",
     openGraph: {
       title: "MedSearch",
-      description: "Ask the data. See the evidence across the supplied tablet and disease records.",
+      description: "Ask the PDF and review the matching medical guidance with page references.",
     },
     twitter: {
       card: "summary",
       title: "MedSearch",
-      description: "Ask the data. See the evidence across the supplied tablet and disease records.",
+      description: "Ask the PDF and review the matching medical guidance with page references.",
     },
     icons: {
       icon: "/favicon.svg",

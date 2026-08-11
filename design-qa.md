@@ -1,28 +1,28 @@
 # MedSearch Design QA
 
-- Source visual: `C:\Users\22ht1\.codex\generated_images\019fef30-1500-7232-8361-dc72ee7943e6\exec-876c534f-170c-4a3a-a474-e73da8f2b4d8.png`
-- Implementation: `http://127.0.0.1:4174/`
-- Desktop viewport: 1440 × 1024
-- Source pixels: 1487 × 1058
-- Implementation pixels: 1440 × 1024
-- State compared: populated conversation with six retrieved CSV rows
-- Full comparison: `work/qa/medsearch-comparison-final.png`
-- Focused comparison: `work/qa/medsearch-comparison-final-focused.png`
+- Data source: `medical info.pdf`
+- Source pages inspected: 23 of 23
+- Search index: 58 condition-focused sections
+- Desktop viewport: 1440 x 1024
+- Mobile viewport: 390 x 844
+- Desktop capture: `work/qa/medsearch-pdf-chat.png`
 
-## Comparison history
+## Layout checks
 
-1. Initial implementation matched the split workspace, but the sidebar was too wide and the table, safety notice, and conversation type were too small.
-2. Increased the core type scale, table row height, safety-notice padding, and composer height.
-3. Corrected the desktop history rail from 342 px to 250 px, matching the source proportion and giving the main conversation the intended width.
-4. Final side-by-side and focused comparisons confirmed the hierarchy, spacing, palette, table structure, composer placement, and responsive behavior were aligned with the selected reference. Tablet names differ intentionally because the implementation uses the supplied CSV rather than fabricated reference rows.
+- User questions appear as blue-tinted bubbles on the right with the user avatar after the message.
+- MedSearch responses remain on the left with the assistant avatar before the response.
+- PDF result cards show the matched condition, source page, overview, suggestions, and medicine guidance.
+- The composer stays visible without covering the active message on desktop and mobile.
+- The recent-chat sidebar becomes an accessible drawer on mobile.
 
-## Interaction checks
+## Data and interaction checks
 
-- Expanded a result with **Details** and confirmed its source row appeared.
-- Opened and closed **Settings**.
-- Submitted “Show tablets related to hypertension” and confirmed the question, matching rows, and recent-chat entry updated.
-- Verified the 390 × 844 mobile layout exposes and opens the recent-chat drawer.
+- Removed the previous tablet CSV and its CSV-specific interface copy.
+- Loaded `medical-info.json`, extracted from the supplied 23-page PDF.
+- Submitted a dengue question and confirmed Dengue was the first retrieved source.
+- Expanded **View guidance** and confirmed the PDF filename and page citation appeared.
+- Opened the recent-chat drawer at the mobile viewport.
 - Browser console errors: none.
-- Production build: passed.
+- Vercel and production builds: passed.
 
 final result: passed
