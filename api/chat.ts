@@ -21,7 +21,7 @@ type ChatBody = {
   fallbackLines?: string[];
   sourceLines?: string[];
   ambiguous?: boolean;
-  responseMode?: "telugu" | "bilingual";
+  responseMode?: "telugu" | "english";
 };
 
 const allowedGlueWords = new Set([
@@ -76,7 +76,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
   const body = (request.body ?? {}) as ChatBody;
   const question = typeof body.question === "string" ? body.question.trim().slice(0, 500) : "";
-  const responseMode = body.responseMode === "telugu" ? "telugu" : "bilingual";
+  const responseMode = body.responseMode === "telugu" ? "telugu" : "english";
   const fallbackLines = Array.isArray(body.fallbackLines)
     ? body.fallbackLines.slice(0, 2).map((line) => cleanLine(String(line)))
     : [];
@@ -102,6 +102,11 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     return;
   }
 
+  if (responseMode === "english") {
+    response.status(200).json({ lines: sourceLines, model: "document-extractive" });
+    return;
+  }
+
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     response.status(503).json({ error: "OpenRouter is not configured", lines: fallbackLines });
@@ -111,7 +116,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   const contextText = JSON.stringify({ context, sourceLines });
   const languageInstruction = responseMode === "telugu"
     ? "Translate sourceAnswerLines[0] into Telugu line1 and sourceAnswerLines[1] into Telugu line2. Keep medicine names in their source form when needed."
-    : "Copy sourceAnswerLines[0] exactly as line1, then write its natural Telugu translation as line2.";
+    : "Write both answer lines in English.";
   const systemPrompt = [
     "You are MedSearch. Use ONLY the supplied medical-document context.",
     "Never add outside knowledge, a diagnosis, a personal prescription, or an unlisted medicine.",
@@ -159,7 +164,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     const content = completion.choices?.[0]?.message?.content ?? "";
     const proposed = parseModelLines(content);
     const validTranslation = proposed && proposed.every((line) => line && isGrounded(line, contextText));
-    const validLanguageShape = responseMode === "telugu" || proposed?.[0] === sourceLines[0];
+    const validLanguageShape = responseMode === "telugu";
     const lines = validTranslation && validLanguageShape ? proposed : fallbackLines;
 
     response.status(200).json({ lines, model: completion.model ?? "openrouter/free" });

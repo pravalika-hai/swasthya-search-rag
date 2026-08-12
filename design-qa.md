@@ -26,7 +26,7 @@
 - Submitted ambiguous symptoms and confirmed MedSearch did not guess a condition.
 - Confirmed medicine responses use only wording extracted from the three new PDFs, with no invented dose.
 - Telugu questions are translated only for document retrieval and return two Telugu answer lines.
-- English questions return one English answer line followed by its Telugu translation.
+- English questions return two English-only answer lines; Telugu questions return two Telugu-only lines.
 - Added a same-origin server endpoint for OpenRouter's `openrouter/free` router; the browser never receives the API key.
 - Confirmed the endpoint returns the two-line document fallback when `OPENROUTER_API_KEY` is unavailable.
 - Confirmed model output is rejected unless its meaningful words and numbers are grounded in the retrieved PDF context.
