@@ -22,15 +22,17 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase,
     title: "MedSearch | Medical PDF Assistant",
-    description: "A retrieval assistant grounded in the supplied medical information PDF.",
+    description: "A retrieval assistant grounded in three supplied WHO medical guidelines.",
     openGraph: {
       title: "MedSearch",
-      description: "Ask the PDF and review the matching medical guidance with page references.",
+      description: "Ask three supplied medical PDFs and receive concise, document-grounded answers.",
+      images: [{ url: "/og.png", width: 1728, height: 909, alt: "MedSearch - answers grounded in 3 medical PDFs" }],
     },
     twitter: {
       card: "summary",
       title: "MedSearch",
-      description: "Ask the PDF and review the matching medical guidance with page references.",
+      description: "Ask three supplied medical PDFs and receive concise, document-grounded answers.",
+      images: ["/og.png"],
     },
     icons: {
       icon: "/favicon.svg",

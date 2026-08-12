@@ -18,16 +18,17 @@ import {
 
 type MedicalRecord = {
   id: number;
+  source: string;
   title: string;
   page: number;
   overview: string;
   medicine: string;
   suggestions: string;
-  searchText: string;
+  referenceLike?: boolean;
 };
 
 type MedicalDataset = {
-  source: string;
+  sources: Array<{ file: string; title: string; pageCount: number; sha256: string }>;
   pageCount: number;
   recordCount: number;
   records: MedicalRecord[];
@@ -39,24 +40,23 @@ type RecentChat = {
   createdAt: string;
 };
 
-const starterQuery = "What does the PDF say about high blood pressure?";
+const starterQuery = "What do the documents say about antenatal care?";
 
 const starterChats: RecentChat[] = [
   { id: 1, query: starterQuery, createdAt: "Just now" },
-  { id: 2, query: "What are the suggestions for diabetes?", createdAt: "Yesterday" },
-  { id: 3, query: "What does the PDF say about dengue?", createdAt: "2 days ago" },
-  { id: 4, query: "Show the medicine information for asthma", createdAt: "3 days ago" },
-  { id: 5, query: "What are common migraine symptoms?", createdAt: "5 days ago" },
+  { id: 2, query: "What is recommended for acute malnutrition?", createdAt: "Yesterday" },
+  { id: 3, query: "What does the document say about folic acid?", createdAt: "2 days ago" },
+  { id: 4, query: "What is recommended for postpartum haemorrhage?", createdAt: "3 days ago" },
 ];
 
 const suggestions = [
-  "What does the PDF say about diabetes?",
-  "Show suggestions for fever",
-  "What medicine information is listed for asthma?",
+  "What is recommended for antenatal care?",
+  "What does the document say about acute malnutrition?",
+  "What medicine information is listed for postpartum haemorrhage?",
 ];
 
 const stopWords = new Set([
-  "a", "about", "an", "and", "are", "does", "for", "from", "give", "have", "i",
+  "a", "about", "an", "and", "are", "do", "does", "document", "documents", "for", "from", "give", "have", "i",
   "in", "information", "is", "it", "listed", "me", "medical", "medicine", "of",
   "on", "or", "pdf", "say", "show", "suggestion", "suggestions", "the", "to",
   "what", "which", "with",
@@ -89,14 +89,16 @@ function retrieve(data: MedicalRecord[], query: string) {
       const overview = normalise(record.overview);
       const medicine = normalise(record.medicine);
       const suggestionsText = normalise(record.suggestions);
-      let score = 0;
+      let score = queryText.length > 3 && overview.includes(queryText) ? 35 : 0;
       queryTokens.forEach((token) => {
         if (title === token) score += 20;
         if (title.includes(token)) score += 12;
-        if (overview.includes(token)) score += 4;
+        const overviewMatches = overview.split(token).length - 1;
+        if (overviewMatches) score += Math.min(overviewMatches, 6) * 4;
         if (medicine.includes(token)) score += 3;
         if (suggestionsText.includes(token)) score += 2;
       });
+      if (record.referenceLike) score -= 30;
       return { record, score };
     })
     .filter(({ score }) => score > 0)
@@ -111,10 +113,15 @@ function retrieve(data: MedicalRecord[], query: string) {
   return { matches: ranked.map(({ record }) => record), ambiguous };
 }
 
-function shortLine(value: string, maximum = 92) {
+function shortLine(value: string, maximum = 108) {
   const firstSentence = value.split(/(?<=[.!?])\s/)[0]?.trim() || value.trim();
   if (firstSentence.length <= maximum) return firstSentence;
   return `${firstSentence.slice(0, maximum - 3).trimEnd()}...`;
+}
+
+function firstTwoLines(value: string): [string, string] {
+  const sentences = value.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
+  return [shortLine(sentences[0] || value), shortLine(sentences[1] || sentences[0] || value)];
 }
 
 function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous: boolean): [string, string] {
@@ -135,10 +142,8 @@ function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous:
   const medicineLine = matches[0].medicine && !matches[0].medicine.startsWith("Consult a qualified")
     ? shortLine(matches[0].medicine)
     : "The document does not name a specific medicine for this condition.";
-  return [
-    shortLine(matches[0].overview),
-    asksForMedicine ? medicineLine : shortLine(matches[0].suggestions),
-  ];
+  const extracted = firstTwoLines(matches[0].overview);
+  return [extracted[0], asksForMedicine ? medicineLine : extracted[1]];
 }
 
 export default function HealthRag() {
@@ -158,7 +163,7 @@ export default function HealthRag() {
   const answerRequestRef = useRef(0);
 
   useEffect(() => {
-    fetch("/data/medical-info.json")
+    fetch("/data/knowledge-base.json")
       .then((response) => {
         if (!response.ok) throw new Error("PDF dataset could not be loaded");
         return response.json() as Promise<MedicalDataset>;
@@ -174,7 +179,7 @@ export default function HealthRag() {
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem("medsearch-pdf-recent-chats");
+      const saved = window.localStorage.getItem("medsearch-three-pdf-recent-chats");
       if (saved) setRecentChats(JSON.parse(saved));
     } catch {
       // Session history remains available when browser storage is unavailable.
@@ -197,7 +202,7 @@ export default function HealthRag() {
         ...current.filter((chat) => chat.query !== clean),
       ].slice(0, 8);
       try {
-        window.localStorage.setItem("medsearch-pdf-recent-chats", JSON.stringify(next));
+        window.localStorage.setItem("medsearch-three-pdf-recent-chats", JSON.stringify(next));
       } catch {
         // History still works for this session.
       }
@@ -303,7 +308,7 @@ export default function HealthRag() {
           <button className="mobile-menu-button" type="button" aria-label="Open recent chats" onClick={() => setMobileSidebarOpen(true)}><SidebarSimple size={20} /></button>
           <div className="mobile-brand app-brand"><span className="brand-mark"><Plus size={18} weight="bold" /></span><strong>MedSearch</strong></div>
           <div className="topbar-actions">
-            <span className="dataset-status"><CheckCircle size={16} weight="fill" /> {dataset?.pageCount || 23}-page PDF connected</span>
+            <span className="dataset-status"><CheckCircle size={16} weight="fill" /> 3 PDFs · {dataset?.pageCount || 588} pages connected</span>
             <button type="button" onClick={() => setMobileSidebarOpen(true)}><ClockCounterClockwise size={18} /> <span>Recent chats</span></button>
             <button type="button" onClick={newChat}><ChatCircleDots size={18} /> <span>New chat</span></button>
           </div>
@@ -316,7 +321,7 @@ export default function HealthRag() {
                 <span className="welcome-icon"><FilePdf size={30} weight="duotone" /></span>
                 <span className="eyebrow">MEDSEARCH PDF ASSISTANT</span>
                 <h1>What would you like to know?</h1>
-                <p>Ask about a condition or symptom. MedSearch retrieves matching guidance from your supplied medical PDF.</p>
+                <p>Ask about maternal health, antenatal care, or child malnutrition. MedSearch uses only your three supplied PDFs.</p>
                 <div className="suggestion-list">
                   {suggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => ask(suggestion)}>{suggestion}<CaretRight size={16} /></button>)}
                 </div>
@@ -353,7 +358,7 @@ export default function HealthRag() {
           <section className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
             <header><h2 id="settings-title">MedSearch settings</h2><button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={19} /></button></header>
             <div className="settings-row"><span><strong>Motion</strong><small>Follows your system's reduced-motion preference.</small></span><CheckCircle size={22} weight="fill" /></div>
-            <div className="settings-row"><span><strong>Dataset</strong><small>medical info.pdf - {dataset?.recordCount || 58} searchable sections</small></span><FilePdf size={22} weight="fill" /></div>
+            <div className="settings-row"><span><strong>Dataset</strong><small>data.pdf, pw1.pdf, pw2.pdf · {dataset?.recordCount || 0} searchable chunks</small></span><FilePdf size={22} weight="fill" /></div>
           </section>
         </div>
       )}

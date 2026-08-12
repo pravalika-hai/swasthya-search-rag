@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import HealthRag from "./HealthRag";
 
 export const metadata: Metadata = {
-  title: "Swasthya Search | Tablet & Disease Reference",
+  title: "MedSearch | Medical PDF Assistant",
   description:
-    "Ask grounded questions across the supplied tablet and disease dataset.",
+    "Ask grounded questions across three supplied WHO medical guidelines.",
 };
 
 export default function Home() {
