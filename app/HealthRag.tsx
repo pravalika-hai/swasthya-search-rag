@@ -130,20 +130,38 @@ function hasTelugu(value: string) {
   return /[\u0C00-\u0C7F]/.test(value);
 }
 
-function enrichTeluguSearch(question: string, translated: string) {
+function getTeluguSearchAliases(question: string) {
   const glossary: Array<[RegExp, string]> = [
     [/ప్రసవానంతర\s*రక్తస్రావ/i, "postpartum haemorrhage"],
     [/పోషకాహార\s*లోప/i, "malnutrition"],
     [/రక్తహీనత/i, "anaemia"],
     [/రక్తపోటు/i, "blood pressure hypertension"],
     [/మధుమేహ/i, "diabetes"],
-    [/గర్భధారణ/i, "pregnancy antenatal"],
+    [/(?:గర్భధారణ|గర్భిణి)/i, "pregnancy antenatal"],
+    [/ప్రసవం/i, "labour childbirth"],
     [/జ్వరం/i, "fever"],
     [/తలనొప్పి/i, "headache"],
+    [/వాంత/i, "vomiting nausea"],
+    [/విరేచన/i, "diarrhoea"],
+    [/దగ్గు/i, "cough"],
+    [/శ్వాస/i, "breathing"],
+    [/వాపు/i, "swelling oedema"],
+    [/బరువు/i, "weight growth"],
+    [/(?:శిశువు|నవజాత)/i, "infant newborn"],
+    [/పిల్ల/i, "children"],
+    [/పాలిచ్చ/i, "breastfeeding"],
+    [/ఫోలిక్/i, "folic acid"],
+    [/ఇనుము/i, "iron"],
+    [/కాల్షియం/i, "calcium"],
+    [/మలేరియా/i, "malaria"],
+    [/(?:హెచ్.?ఐ.?వి|హెచ్ఐవి)/i, "HIV"],
+    [/మోతాదు/i, "dose dosage"],
+    [/సిఫార్స/i, "recommended recommendation"],
     [/(?:మందు|ఔషధ)/i, "medicine treatment"],
   ];
   const aliases = glossary.filter(([pattern]) => pattern.test(question)).map(([, alias]) => alias);
-  return [...new Set([translated, ...aliases])].join(" ");
+  if (/(?:నాకు|నేను)/.test(question) && aliases.length) aliases.unshift("I have symptoms");
+  return [...new Set(aliases)].join(" ");
 }
 
 function loadingLines(mode: ResponseMode): [string, string] {
@@ -258,20 +276,25 @@ export default function HealthRag() {
   async function resolveQuestion(question: string, mode: ResponseMode, requestId: number) {
     let searchQuery = question;
     if (mode === "telugu") {
-      try {
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question }),
-        });
-        const payload = await response.json() as { query?: unknown };
-        if (typeof payload.query !== "string" || !payload.query.trim()) throw new Error("Translation unavailable");
-        searchQuery = enrichTeluguSearch(question, payload.query);
-      } catch {
-        if (answerRequestRef.current === requestId) {
-          setGeneratedAnswer(["తెలుగు ప్రశ్నను వెతకడానికి భాషా సేవ ప్రస్తుతం అందుబాటులో లేదు.", "దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి."]);
+      const directAliases = getTeluguSearchAliases(question);
+      if (directAliases) {
+        searchQuery = directAliases;
+      } else {
+        try {
+          const response = await fetch("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question }),
+          });
+          const payload = await response.json() as { query?: unknown };
+          if (typeof payload.query !== "string" || !payload.query.trim()) throw new Error("Translation unavailable");
+          searchQuery = payload.query;
+        } catch {
+          if (answerRequestRef.current === requestId) {
+            setGeneratedAnswer(["తెలుగు ప్రశ్నను వెతకడానికి భాషా సేవ ప్రస్తుతం అందుబాటులో లేదు.", "దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి."]);
+          }
+          return;
         }
-        return;
       }
     }
     if (answerRequestRef.current !== requestId || !dataset) return;
