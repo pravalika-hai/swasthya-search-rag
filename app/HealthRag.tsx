@@ -136,6 +136,16 @@ function loadingLines(mode: ResponseMode): [string, string] {
     : ["Searching the medical documents...", "వైద్య పత్రాల్లో వెతుకుతోంది..."];
 }
 
+function getSourceLines(question: string, matches: MedicalRecord[]): [string, string] {
+  const asksForMedicine = /\b(medicine|medicines|tablet|tablets|drug|drugs)\b/.test(normalise(question));
+  const extracted = firstTwoLines(matches[0].overview);
+  if (!asksForMedicine) return extracted;
+  const medicineLine = matches[0].medicine && !matches[0].medicine.startsWith("Consult a qualified")
+    ? shortLine(matches[0].medicine)
+    : "The document does not name a specific medicine for this condition.";
+  return [medicineLine, extracted[0]];
+}
+
 function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous: boolean, mode: ResponseMode): [string, string] {
   if (ambiguous) {
     return mode === "telugu"
@@ -148,15 +158,11 @@ function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous:
       : ["I couldn't find information about this condition in the provided medical document.", "ఈ పరిస్థితి గురించి పత్రాల్లో సమాచారం దొరకలేదు."];
   }
 
-  const asksForMedicine = /\b(medicine|medicines|tablet|tablets|drug|drugs)\b/.test(normalise(question));
-  const medicineLine = matches[0].medicine && !matches[0].medicine.startsWith("Consult a qualified")
-    ? shortLine(matches[0].medicine)
-    : "The document does not name a specific medicine for this condition.";
-  const extracted = firstTwoLines(matches[0].overview);
+  const sourceLines = getSourceLines(question, matches);
   if (mode === "telugu") {
     return ["తెలుగు సమాధానాన్ని రూపొందించే సేవ ప్రస్తుతం అందుబాటులో లేదు.", "దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి."];
   }
-  return [asksForMedicine ? medicineLine : extracted[0], "తెలుగు అనువాదం ప్రస్తుతం అందుబాటులో లేదు."];
+  return [sourceLines[0], "తెలుగు అనువాదం ప్రస్తుతం అందుబాటులో లేదు."];
 }
 
 export default function HealthRag() {
@@ -261,6 +267,7 @@ export default function HealthRag() {
 
   async function requestOpenRouterAnswer(question: string, matches: MedicalRecord[], isAmbiguous: boolean, mode: ResponseMode, requestId: number) {
     const fallbackLines = getFallbackLines(question, matches, isAmbiguous, mode);
+    const sourceLines = matches.length ? getSourceLines(question, matches) : fallbackLines;
 
     try {
       const response = await fetch("/api/chat", {
@@ -271,6 +278,7 @@ export default function HealthRag() {
           responseMode: mode,
           ambiguous: isAmbiguous,
           fallbackLines,
+          sourceLines,
           context: matches.map(({ title, overview, medicine, suggestions }) => ({ title, overview, medicine, suggestions })),
         }),
       });

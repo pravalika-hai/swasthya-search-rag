@@ -19,6 +19,7 @@ type ChatBody = {
   question?: string;
   context?: ContextRecord[];
   fallbackLines?: string[];
+  sourceLines?: string[];
   ambiguous?: boolean;
   responseMode?: "telugu" | "bilingual";
 };
@@ -79,6 +80,9 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   const fallbackLines = Array.isArray(body.fallbackLines)
     ? body.fallbackLines.slice(0, 2).map((line) => cleanLine(String(line)))
     : [];
+  const sourceLines = Array.isArray(body.sourceLines)
+    ? body.sourceLines.slice(0, 2).map((line) => cleanLine(String(line)))
+    : [];
   const context = Array.isArray(body.context)
     ? body.context.slice(0, 4).map((record) => ({
         title: String(record.title ?? "").slice(0, 100),
@@ -88,7 +92,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       }))
     : [];
 
-  if (!question || fallbackLines.length !== 2) {
+  if (!question || fallbackLines.length !== 2 || sourceLines.length !== 2) {
     response.status(400).json({ error: "Invalid request" });
     return;
   }
@@ -104,10 +108,10 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     return;
   }
 
-  const contextText = JSON.stringify(context);
+  const contextText = JSON.stringify({ context, sourceLines });
   const languageInstruction = responseMode === "telugu"
-    ? "Write both answer lines in natural Telugu. Keep medicine names in their source form when needed."
-    : "Write line1 in English and line2 as its natural Telugu translation. Both lines must convey the same answer.";
+    ? "Translate sourceAnswerLines[0] into Telugu line1 and sourceAnswerLines[1] into Telugu line2. Keep medicine names in their source form when needed."
+    : "Copy sourceAnswerLines[0] exactly as line1, then write its natural Telugu translation as line2.";
   const systemPrompt = [
     "You are MedSearch. Use ONLY the supplied medical-document context.",
     "Never add outside knowledge, a diagnosis, a personal prescription, or an unlisted medicine.",
@@ -130,12 +134,13 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       body: JSON.stringify({
         model: "openrouter/free",
         temperature: 0,
-        max_tokens: 120,
+        max_tokens: 240,
+        reasoning: { effort: "none" },
         messages: [
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: JSON.stringify({ question, medicalDocumentContext: context, requiredFallback: fallbackLines }),
+            content: JSON.stringify({ question, sourceAnswerLines: sourceLines, medicalDocumentContext: context, requiredFallback: fallbackLines }),
           },
         ],
       }),
@@ -153,9 +158,9 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     };
     const content = completion.choices?.[0]?.message?.content ?? "";
     const proposed = parseModelLines(content);
-    const lines = proposed && proposed.every((line) => line && isGrounded(line, contextText))
-      ? proposed
-      : fallbackLines;
+    const validTranslation = proposed && proposed.every((line) => line && isGrounded(line, contextText));
+    const validLanguageShape = responseMode === "telugu" || proposed?.[0] === sourceLines[0];
+    const lines = validTranslation && validLanguageShape ? proposed : fallbackLines;
 
     response.status(200).json({ lines, model: completion.model ?? "openrouter/free" });
   } catch {

@@ -9,7 +9,23 @@ type ApiResponse = {
 };
 
 function cleanQuery(value: string) {
-  return value.replace(/\s+/g, " ").trim().slice(0, 180);
+  return value.replace(/```(?:json)?|```/gi, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+}
+
+function parseQuery(content: string) {
+  try {
+    const start = content.indexOf("{");
+    const end = content.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      const parsed = JSON.parse(content.slice(start, end + 1)) as { query?: unknown };
+      if (typeof parsed.query === "string") return cleanQuery(parsed.query);
+    }
+  } catch {
+    // Fall through to plain-text extraction.
+  }
+  const withoutThinking = content.replace(/<think>[\s\S]*?<\/think>/gi, " ");
+  const plain = cleanQuery(withoutThinking.replace(/^query\s*:\s*/i, ""));
+  return /[a-z]/i.test(plain) ? plain : "";
 }
 
 export default async function handler(request: ApiRequest, response: ApiResponse) {
@@ -43,7 +59,8 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       body: JSON.stringify({
         model: "openrouter/free",
         temperature: 0,
-        max_tokens: 60,
+        max_tokens: 220,
+        reasoning: { effort: "none" },
         messages: [
           {
             role: "system",
@@ -62,10 +79,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
     const completion = await openRouterResponse.json() as { choices?: Array<{ message?: { content?: string } }> };
     const content = completion.choices?.[0]?.message?.content ?? "";
-    const start = content.indexOf("{");
-    const end = content.lastIndexOf("}");
-    const parsed = start >= 0 && end > start ? JSON.parse(content.slice(start, end + 1)) as { query?: unknown } : {};
-    const query = typeof parsed.query === "string" ? cleanQuery(parsed.query) : "";
+    const query = parseQuery(content);
     if (!query) {
       response.status(502).json({ error: "Translation unavailable" });
       return;
