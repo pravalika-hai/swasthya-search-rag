@@ -40,6 +40,8 @@ type RecentChat = {
   createdAt: string;
 };
 
+type ResponseMode = "telugu" | "bilingual";
+
 const starterQuery = "What do the documents say about antenatal care?";
 
 const starterChats: RecentChat[] = [
@@ -124,18 +126,26 @@ function firstTwoLines(value: string): [string, string] {
   return [shortLine(sentences[0] || value), shortLine(sentences[1] || sentences[0] || value)];
 }
 
-function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous: boolean): [string, string] {
+function hasTelugu(value: string) {
+  return /[\u0C00-\u0C7F]/.test(value);
+}
+
+function loadingLines(mode: ResponseMode): [string, string] {
+  return mode === "telugu"
+    ? ["వైద్య పత్రాల్లో సంబంధిత సమాచారాన్ని వెతుకుతోంది...", "దయచేసి కాసేపు వేచి ఉండండి."]
+    : ["Searching the medical documents...", "వైద్య పత్రాల్లో వెతుకుతోంది..."];
+}
+
+function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous: boolean, mode: ResponseMode): [string, string] {
   if (ambiguous) {
-    return [
-      "These symptoms could match multiple conditions in the document.",
-      "The available information is insufficient to identify one condition.",
-    ];
+    return mode === "telugu"
+      ? ["ఈ లక్షణాలు పత్రాల్లోని అనేక పరిస్థితులకు సరిపోవచ్చు.", "ఒక పరిస్థితిని గుర్తించడానికి సమాచారం సరిపోదు."]
+      : ["These symptoms could match multiple conditions in the documents.", "ఒక పరిస్థితిని గుర్తించడానికి సమాచారం సరిపోదు."];
   }
   if (!matches.length) {
-    return [
-      "I couldn't find information about this condition in the provided medical document.",
-      "\u00a0",
-    ];
+    return mode === "telugu"
+      ? ["అందించిన వైద్య పత్రాల్లో ఈ పరిస్థితి గురించి సమాచారం దొరకలేదు.", "\u00a0"]
+      : ["I couldn't find information about this condition in the provided medical document.", "ఈ పరిస్థితి గురించి పత్రాల్లో సమాచారం దొరకలేదు."];
   }
 
   const asksForMedicine = /\b(medicine|medicines|tablet|tablets|drug|drugs)\b/.test(normalise(question));
@@ -143,7 +153,10 @@ function getFallbackLines(question: string, matches: MedicalRecord[], ambiguous:
     ? shortLine(matches[0].medicine)
     : "The document does not name a specific medicine for this condition.";
   const extracted = firstTwoLines(matches[0].overview);
-  return [extracted[0], asksForMedicine ? medicineLine : extracted[1]];
+  if (mode === "telugu") {
+    return ["తెలుగు సమాధానాన్ని రూపొందించే సేవ ప్రస్తుతం అందుబాటులో లేదు.", "దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి."];
+  }
+  return [asksForMedicine ? medicineLine : extracted[0], "తెలుగు అనువాదం ప్రస్తుతం అందుబాటులో లేదు."];
 }
 
 export default function HealthRag() {
@@ -153,6 +166,7 @@ export default function HealthRag() {
   const [activeQuery, setActiveQuery] = useState(starterQuery);
   const [results, setResults] = useState<MedicalRecord[]>([]);
   const [ambiguous, setAmbiguous] = useState(false);
+  const [responseMode, setResponseMode] = useState<ResponseMode>("bilingual");
   const [generatedAnswer, setGeneratedAnswer] = useState<[string, string] | null>(null);
   const [recentChats, setRecentChats] = useState<RecentChat[]>(starterChats);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -173,6 +187,10 @@ export default function HealthRag() {
         const initial = retrieve(nextDataset.records, starterQuery);
         setResults(initial.matches);
         setAmbiguous(initial.ambiguous);
+        const requestId = answerRequestRef.current + 1;
+        answerRequestRef.current = requestId;
+        setGeneratedAnswer(loadingLines("bilingual"));
+        void requestOpenRouterAnswer(starterQuery, initial.matches, initial.ambiguous, "bilingual", requestId);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -189,11 +207,14 @@ export default function HealthRag() {
   function ask(nextQuery: string) {
     const clean = nextQuery.trim();
     if (!clean || !dataset) return;
-    const retrieval = retrieve(dataset.records, clean);
+    const mode: ResponseMode = hasTelugu(clean) ? "telugu" : "bilingual";
+    const requestId = answerRequestRef.current + 1;
+    answerRequestRef.current = requestId;
     setActiveQuery(clean);
-    setResults(retrieval.matches);
-    setAmbiguous(retrieval.ambiguous);
-    setGeneratedAnswer(null);
+    setResponseMode(mode);
+    setResults([]);
+    setAmbiguous(false);
+    setGeneratedAnswer(loadingLines(mode));
     setQuery("");
     setMobileSidebarOpen(false);
     setRecentChats((current) => {
@@ -208,14 +229,38 @@ export default function HealthRag() {
       }
       return next;
     });
-    void requestOpenRouterAnswer(clean, retrieval.matches, retrieval.ambiguous);
+    void resolveQuestion(clean, mode, requestId);
     requestAnimationFrame(() => threadEndRef.current?.scrollIntoView({ behavior: "smooth" }));
   }
 
-  async function requestOpenRouterAnswer(question: string, matches: MedicalRecord[], isAmbiguous: boolean) {
-    const requestId = answerRequestRef.current + 1;
-    answerRequestRef.current = requestId;
-    const fallbackLines = getFallbackLines(question, matches, isAmbiguous);
+  async function resolveQuestion(question: string, mode: ResponseMode, requestId: number) {
+    let searchQuery = question;
+    if (mode === "telugu") {
+      try {
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        });
+        const payload = await response.json() as { query?: unknown };
+        if (typeof payload.query !== "string" || !payload.query.trim()) throw new Error("Translation unavailable");
+        searchQuery = payload.query;
+      } catch {
+        if (answerRequestRef.current === requestId) {
+          setGeneratedAnswer(["తెలుగు ప్రశ్నను వెతకడానికి భాషా సేవ ప్రస్తుతం అందుబాటులో లేదు.", "దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి."]);
+        }
+        return;
+      }
+    }
+    if (answerRequestRef.current !== requestId || !dataset) return;
+    const retrieval = retrieve(dataset.records, searchQuery);
+    setResults(retrieval.matches);
+    setAmbiguous(retrieval.ambiguous);
+    await requestOpenRouterAnswer(question, retrieval.matches, retrieval.ambiguous, mode, requestId);
+  }
+
+  async function requestOpenRouterAnswer(question: string, matches: MedicalRecord[], isAmbiguous: boolean, mode: ResponseMode, requestId: number) {
+    const fallbackLines = getFallbackLines(question, matches, isAmbiguous, mode);
 
     try {
       const response = await fetch("/api/chat", {
@@ -223,6 +268,7 @@ export default function HealthRag() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question,
+          responseMode: mode,
           ambiguous: isAmbiguous,
           fallbackLines,
           context: matches.map(({ title, overview, medicine, suggestions }) => ({ title, overview, medicine, suggestions })),
@@ -236,9 +282,11 @@ export default function HealthRag() {
         && payload.lines.every((line) => typeof line === "string")
       ) {
         setGeneratedAnswer([payload.lines[0], payload.lines[1]]);
+      } else if (answerRequestRef.current === requestId) {
+        setGeneratedAnswer(fallbackLines);
       }
     } catch {
-      // The local document-grounded answer remains visible when the API is unavailable.
+      if (answerRequestRef.current === requestId) setGeneratedAnswer(fallbackLines);
     }
   }
 
@@ -251,6 +299,7 @@ export default function HealthRag() {
     setActiveQuery("");
     setResults([]);
     setAmbiguous(false);
+    setResponseMode("bilingual");
     setGeneratedAnswer(null);
     answerRequestRef.current += 1;
     setQuery("");
@@ -260,7 +309,7 @@ export default function HealthRag() {
 
   const answerLines = loading
     ? ["Reading the medical information...", "Please wait a moment."]
-    : generatedAnswer ?? getFallbackLines(activeQuery, results, ambiguous);
+    : generatedAnswer ?? getFallbackLines(activeQuery, results, ambiguous, responseMode);
 
   const sidebarClass = [
     "history-sidebar",

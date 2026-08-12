@@ -20,6 +20,7 @@ type ChatBody = {
   context?: ContextRecord[];
   fallbackLines?: string[];
   ambiguous?: boolean;
+  responseMode?: "telugu" | "bilingual";
 };
 
 const allowedGlueWords = new Set([
@@ -74,6 +75,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
   const body = (request.body ?? {}) as ChatBody;
   const question = typeof body.question === "string" ? body.question.trim().slice(0, 500) : "";
+  const responseMode = body.responseMode === "telugu" ? "telugu" : "bilingual";
   const fallbackLines = Array.isArray(body.fallbackLines)
     ? body.fallbackLines.slice(0, 2).map((line) => cleanLine(String(line)))
     : [];
@@ -103,11 +105,15 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   }
 
   const contextText = JSON.stringify(context);
+  const languageInstruction = responseMode === "telugu"
+    ? "Write both answer lines in natural Telugu. Keep medicine names in their source form when needed."
+    : "Write line1 in English and line2 as its natural Telugu translation. Both lines must convey the same answer.";
   const systemPrompt = [
     "You are MedSearch. Use ONLY the supplied medical-document context.",
     "Never add outside knowledge, a diagnosis, a personal prescription, or an unlisted medicine.",
     "Never add dosage or frequency unless it appears verbatim in the context.",
     "If the context is insufficient, preserve the supplied fallback wording.",
+    languageInstruction,
     "Return JSON only: {\"line1\":\"short line\",\"line2\":\"short line\"}.",
     "Each line must be under 110 characters. No headings, bullets, warnings, citations, or extra text.",
   ].join(" ");
