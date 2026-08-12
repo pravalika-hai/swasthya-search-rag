@@ -130,6 +130,22 @@ function hasTelugu(value: string) {
   return /[\u0C00-\u0C7F]/.test(value);
 }
 
+function enrichTeluguSearch(question: string, translated: string) {
+  const glossary: Array<[RegExp, string]> = [
+    [/ప్రసవానంతర\s*రక్తస్రావ/i, "postpartum haemorrhage"],
+    [/పోషకాహార\s*లోప/i, "malnutrition"],
+    [/రక్తహీనత/i, "anaemia"],
+    [/రక్తపోటు/i, "blood pressure hypertension"],
+    [/మధుమేహ/i, "diabetes"],
+    [/గర్భధారణ/i, "pregnancy antenatal"],
+    [/జ్వరం/i, "fever"],
+    [/తలనొప్పి/i, "headache"],
+    [/(?:మందు|ఔషధ)/i, "medicine treatment"],
+  ];
+  const aliases = glossary.filter(([pattern]) => pattern.test(question)).map(([, alias]) => alias);
+  return [...new Set([translated, ...aliases])].join(" ");
+}
+
 function loadingLines(mode: ResponseMode): [string, string] {
   return mode === "telugu"
     ? ["వైద్య పత్రాల్లో సంబంధిత సమాచారాన్ని వెతుకుతోంది...", "దయచేసి కాసేపు వేచి ఉండండి."]
@@ -196,7 +212,7 @@ export default function HealthRag() {
         const requestId = answerRequestRef.current + 1;
         answerRequestRef.current = requestId;
         setGeneratedAnswer(loadingLines("bilingual"));
-        void requestOpenRouterAnswer(starterQuery, initial.matches, initial.ambiguous, "bilingual", requestId);
+        void requestOpenRouterAnswer(starterQuery, starterQuery, initial.matches, initial.ambiguous, "bilingual", requestId);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -250,7 +266,7 @@ export default function HealthRag() {
         });
         const payload = await response.json() as { query?: unknown };
         if (typeof payload.query !== "string" || !payload.query.trim()) throw new Error("Translation unavailable");
-        searchQuery = payload.query;
+        searchQuery = enrichTeluguSearch(question, payload.query);
       } catch {
         if (answerRequestRef.current === requestId) {
           setGeneratedAnswer(["తెలుగు ప్రశ్నను వెతకడానికి భాషా సేవ ప్రస్తుతం అందుబాటులో లేదు.", "దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి."]);
@@ -262,12 +278,12 @@ export default function HealthRag() {
     const retrieval = retrieve(dataset.records, searchQuery);
     setResults(retrieval.matches);
     setAmbiguous(retrieval.ambiguous);
-    await requestOpenRouterAnswer(question, retrieval.matches, retrieval.ambiguous, mode, requestId);
+    await requestOpenRouterAnswer(question, searchQuery, retrieval.matches, retrieval.ambiguous, mode, requestId);
   }
 
-  async function requestOpenRouterAnswer(question: string, matches: MedicalRecord[], isAmbiguous: boolean, mode: ResponseMode, requestId: number) {
+  async function requestOpenRouterAnswer(question: string, retrievalQuery: string, matches: MedicalRecord[], isAmbiguous: boolean, mode: ResponseMode, requestId: number) {
     const fallbackLines = getFallbackLines(question, matches, isAmbiguous, mode);
-    const sourceLines = matches.length ? getSourceLines(question, matches) : fallbackLines;
+    const sourceLines = matches.length ? getSourceLines(retrievalQuery, matches) : fallbackLines;
 
     try {
       const response = await fetch("/api/chat", {

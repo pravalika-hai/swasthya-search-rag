@@ -64,7 +64,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
         messages: [
           {
             role: "system",
-            content: "Translate the Telugu health question into a concise English sentence for document search. Preserve first-person symptom wording and uncertainty. Do not answer, diagnose, or add details. Return JSON only: {\"query\":\"English search sentence\"}.",
+            content: "Translate the Telugu health question into a concise English sentence for medical-document search. Use standard clinical English terms such as postpartum haemorrhage, antenatal care, anaemia, and malnutrition when they match the Telugu meaning. Preserve first-person symptom wording and uncertainty. Do not answer, diagnose, or add details. Return JSON only: {\"query\":\"English search sentence\"}.",
           },
           { role: "user", content: question },
         ],
