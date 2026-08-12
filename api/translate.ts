@@ -57,10 +57,9 @@ export default async function handler(request: ApiRequest, response: ApiResponse
         "X-Title": "MedSearch",
       },
       body: JSON.stringify({
-        model: "openrouter/free",
+        model: "google/gemma-3-27b-it:free",
         temperature: 0,
         max_tokens: 220,
-        reasoning: { effort: "none" },
         messages: [
           {
             role: "system",

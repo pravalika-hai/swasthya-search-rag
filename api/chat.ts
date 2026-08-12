@@ -31,6 +31,12 @@ const allowedGlueWords = new Set([
   "treatment", "with", "without",
 ]);
 
+const protectedMedicineNames = [
+  "aspirin", "azt", "calcium", "carbetocin", "ergometrine", "f-75", "f-100",
+  "folic acid", "iron", "methylergometrine", "misoprostol", "nevirapine", "nvp",
+  "ors", "oxytocin", "pyrimethamine", "resomal", "rutf", "sulfadoxine", "tenofovir",
+];
+
 function cleanLine(value: string) {
   return value
     .replace(/^[-*#\d.)\s]+/, "")
@@ -49,6 +55,16 @@ function isGrounded(line: string, context: string) {
   const sourceNumbers = new Set(context.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
   const unsupportedNumbers = (line.match(/\b\d+(?:\.\d+)?\b/g) ?? []).filter((number) => !sourceNumbers.has(number));
   return unsupported.length === 0 && unsupportedNumbers.length === 0;
+}
+
+function preservesMedicineNames(lines: string[], sourceLines: string[]) {
+  const source = sourceLines.join(" ").toLowerCase();
+  const answer = lines.join(" ").toLowerCase();
+  const contains = (value: string, name: string) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, "i").test(value);
+  };
+  return protectedMedicineNames.every((name) => !contains(source, name) || contains(answer, name));
 }
 
 function parseModelLines(content: string) {
@@ -137,10 +153,9 @@ export default async function handler(request: ApiRequest, response: ApiResponse
         "X-Title": "MedSearch",
       },
       body: JSON.stringify({
-        model: "openrouter/free",
+        model: "google/gemma-3-27b-it:free",
         temperature: 0,
         max_tokens: 240,
-        reasoning: { effort: "none" },
         messages: [
           { role: "system", content: systemPrompt },
           {
@@ -163,7 +178,9 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     };
     const content = completion.choices?.[0]?.message?.content ?? "";
     const proposed = parseModelLines(content);
-    const validTranslation = proposed && proposed.every((line) => line && isGrounded(line, contextText));
+    const validTranslation = proposed
+      && proposed.every((line) => line && isGrounded(line, contextText))
+      && preservesMedicineNames(proposed, sourceLines);
     const validLanguageShape = responseMode === "telugu";
     const lines = validTranslation && validLanguageShape ? proposed : fallbackLines;
 
