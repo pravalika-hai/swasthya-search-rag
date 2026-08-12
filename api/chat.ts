@@ -131,7 +131,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
   const contextText = JSON.stringify({ context, sourceLines });
   const languageInstruction = responseMode === "telugu"
-    ? "Translate sourceAnswerLines[0] into Telugu line1 and sourceAnswerLines[1] into Telugu line2. Keep medicine names in their source form when needed."
+    ? "Translate sourceAnswerLines[0] into Telugu line1 and sourceAnswerLines[1] into Telugu line2. CRITICAL: copy every medicine name, abbreviation, number, and unit exactly in its original Latin characters. Never transliterate, rename, replace, or invent a medicine. For example, Oxytocin must remain Oxytocin."
     : "Write both answer lines in English.";
   const systemPrompt = [
     "You are MedSearch. Use ONLY the supplied medical-document context.",
@@ -153,7 +153,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
         "X-Title": "MedSearch",
       },
       body: JSON.stringify({
-        model: "google/gemma-3-27b-it:free",
+        model: "openrouter/free",
         temperature: 0,
         max_tokens: 240,
         messages: [
